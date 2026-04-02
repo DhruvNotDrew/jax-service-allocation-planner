@@ -2,7 +2,7 @@
 
 A strategic, data-driven optimization tool designed for city planners and public health officials. This application identifies the most impactful locations for new **Healthcare Clinics** and **Grocery Stores** within Jacksonville, FL, by balancing socioeconomic need against real-world budgetary constraints.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://jax-service-allocation-planner.streamlit.app/)
 
 ## 📖 Overview
 

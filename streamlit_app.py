@@ -4,7 +4,7 @@ import numpy as np
 import pulp
 import pydeck as pdk
 import math
-
+ 
 # ---------------------------------------------------------
 # PAGE CONFIG & CLEAN UI
 # ---------------------------------------------------------
@@ -191,7 +191,7 @@ with tab1:
         st.warning("⚠️ Budget insufficient for this radius. Lower the radius or increase total budget.")
     else:
         c1, c2 = st.columns([2, 1])
-        with c1: render_map(clinic_pts, [70, 130, 180], "clinic_need") # Steel Blue
+        with c1: render_map(clinic_pts, [70, 130, 180], "clinic_need") 
         with c2:
             st.write("### Clinic Allocations")
             st.metric("Facilities Built", len(clinic_pts), f"Limit: {max_clinics}")
@@ -203,7 +203,7 @@ with tab2:
         st.warning("⚠️ Budget insufficient for this radius. Lower the radius or increase total budget.")
     else:
         c1, c2 = st.columns([2, 1])
-        with c1: render_map(grocery_pts, [34, 139, 34], "grocery_need") # Green
+        with c1: render_map(grocery_pts, [34, 139, 34], "grocery_need") 
         with c2:
             st.write("### Grocery Allocations")
             st.metric("Facilities Built", len(grocery_pts), f"Limit: {max_groceries}")
@@ -216,7 +216,6 @@ if show_analytics:
     st.bar_chart(chart_data)
 
 st.divider()
-# Expanded info block with Impact Score definition
 st.info(f"""
 **Strategic Summary:**
 * The red heatmap identifies areas with the highest combined social and health risks. 

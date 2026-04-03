@@ -8,7 +8,7 @@ import math
 # ---------------------------------------------------------
 # PAGE CONFIG & CLEAN UI
 # ---------------------------------------------------------
-st.set_page_config(page_title="Jax Service Allocation Planner", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Jax Service Allocation Planner", layout="wide", initial_sidebar_state="expanded", page_icon="favicon.png")
 
 st.markdown("""
     <style>
@@ -196,7 +196,7 @@ with tab1:
             st.write("### Clinic Allocations")
             st.metric("Facilities Built", len(clinic_pts), f"Limit: {max_clinics}")
             st.metric("Money Spent", f"${(len(clinic_pts) * cost_per_clinic):.1f}M")
-            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Impact Score"]].sort_values("Impact Score", ascending=False), hide_index=True)
+            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Impact Score"]].sort_values("Impact Score", ascending=False), hide_index=True, use_container_width=True)
 
 with tab2:
     if grocery_pts.empty:

@@ -180,7 +180,7 @@ def render_map(points_df, color_rgb, need_col):
             "style": {"backgroundColor": bg_color, "color": "white"}
         }
     ))
-
+ 
 # ---------------------------------------------------------
 # UI TABS
 # ---------------------------------------------------------
@@ -190,7 +190,7 @@ with tab1:
     if clinic_pts.empty:
         st.warning("⚠️ Budget insufficient for this radius. Lower the radius or increase total budget.")
     else:
-        c1, c2 = st.columns([3, 1])
+        c1, c2 = st.columns([2, 1])
         with c1: render_map(clinic_pts, [70, 130, 180], "clinic_need") # Steel Blue
         with c2:
             st.write("### Clinic Allocations")
@@ -202,7 +202,7 @@ with tab2:
     if grocery_pts.empty:
         st.warning("⚠️ Budget insufficient for this radius. Lower the radius or increase total budget.")
     else:
-        c1, c2 = st.columns([3, 1])
+        c1, c2 = st.columns([2, 1])
         with c1: render_map(grocery_pts, [34, 139, 34], "grocery_need") # Green
         with c2:
             st.write("### Grocery Allocations")

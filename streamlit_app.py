@@ -175,15 +175,68 @@ with st.spinner("Calculating Optimal Placements..."):
 tab1, tab2 = st.tabs(["🏥 Healthcare Network", "🛒 Food Security Network"])
 
 def render_map(points_df, color_rgb, need_col):
+    # Prepare the background heatmap layer
     df["fill_color"] = df[need_col].apply(lambda x: [255, 0, 0, int(x * 160)])
-    view_state = pdk.ViewState(latitude=30.3322, longitude=-81.6557, zoom=10, pitch=40)
-    layers = [pdk.Layer("ScatterplotLayer", df, get_position="[lon, lat]", get_fill_color="fill_color", get_radius=1100)]
+    
+    view_state = pdk.ViewState(
+        latitude=30.3322, 
+        longitude=-81.6557, 
+        zoom=10, 
+        pitch=40
+    )
+    
+    # Background heatmap (not pickable to keep the UI clean)
+    layers = [
+        pdk.Layer(
+            "ScatterplotLayer", 
+            df, 
+            get_position="[lon, lat]", 
+            get_fill_color="fill_color", 
+            get_radius=1100,
+            pickable=False
+        )
+    ]
+    
+    # Add the proposed facility layers
     if not points_df.empty:
         layers.extend([
-            pdk.Layer("ScatterplotLayer", points_df, get_position="[lon, lat]", get_fill_color=color_rgb + [40], get_radius=radius * 1609),
-            pdk.Layer("ScatterplotLayer", points_df, get_position="[lon, lat]", get_fill_color=color_rgb, get_radius=600, pickable=True)
+            # Outer service radius circle
+            pdk.Layer(
+                "ScatterplotLayer", 
+                points_df, 
+                get_position="[lon, lat]", 
+                get_fill_color=color_rgb + [40], 
+                get_radius=radius * 1609,
+                pickable=False
+            ),
+            # Inner point (The actual facility)
+            pdk.Layer(
+                "ScatterplotLayer", 
+                points_df, 
+                get_position="[lon, lat]", 
+                get_fill_color=color_rgb, 
+                get_radius=600, 
+                pickable=True  # This makes the tooltip work
+            )
         ])
-    st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state, tooltip={"text": "ZIP: {ZIP}\nImpact: {Score}"}))
+    
+    # Updated tooltip with Latitude and Longitude
+    st.pydeck_chart(pdk.Deck(
+        layers=layers, 
+        initial_view_state=view_state, 
+        tooltip={
+            "html": """
+                <b>ZIP Code:</b> {ZIP}<br/>
+                <b>Impact Score:</b> {Score}<br/>
+                <b>Latitude:</b> {lat}<br/>
+                <b>Longitude:</b> {lon}
+            """,
+            "style": {
+                "backgroundColor": "steelblue",
+                "color": "white"
+            }
+        }
+    ))
 
 with tab1:
     if clinic_pts.empty:

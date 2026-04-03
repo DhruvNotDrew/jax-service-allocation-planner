@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import numpy as np 
 import pulp
 import pydeck as pdk
 import math
 
 # ---------------------------------------------------------
-# PAGE CONFIG & CLEAN UI
+# PAGE CONFIG & UI
 # ---------------------------------------------------------
 st.set_page_config(page_title="Jax Service Allocation Planner", layout="wide", initial_sidebar_state="expanded")
 
@@ -56,7 +56,6 @@ def weighted_geometric_median(points, weights, eps=1e-6, max_iter=100):
 @st.cache_data
 def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     try:
-        # Check both the dot folder and root for cloud compatibility
         try:
             need_df = pd.read_csv("datafiles/clustered_zipcodes.csv")
             centroids = pd.read_excel("datafiles/Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")
@@ -71,7 +70,6 @@ def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     need_df = need_df[need_df["ZIP Code"] != 12031]
     need_df = need_df.rename(columns={"ZIP Code": "ZIP", "Low Food Access": "LowFoodAccess", "Park Area": "ParkArea", "PCP Ratio": "PCPRatio"})
 
-    # --- FIX: FORCE ZIP CODES TO STRINGS TO ENSURE MERGE SUCCESS ---
     need_df["ZIP"] = need_df["ZIP"].astype(str).str.strip()
     centroids = centroids.rename(columns={"STD_ZIP5": "ZIP", "LATITUDE": "lat", "LONGITUDE": "lon"})
     centroids["ZIP"] = centroids["ZIP"].astype(str).str.strip()
@@ -80,24 +78,19 @@ def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     for col in ["LowFoodAccess", "Obesity", "Uninsured", "ParkArea", "PCPRatio"]:
         need_df[f"norm_{col}"] = norm(need_df[col])
 
+    # Weights
     h_total = w_uninsured + w_pcp + w_obesity
     h_w = [w / h_total if h_total > 0 else 0 for w in [w_uninsured, w_pcp, w_obesity]]
-    need_df["clinic_need"] = (h_w[0] * need_df["norm_Uninsured"] + 
-                              h_w[1] * need_df["norm_PCPRatio"] + 
-                              h_w[2] * need_df["norm_Obesity"])
+    need_df["clinic_need"] = (h_w[0] * need_df["norm_Uninsured"] + h_w[1] * need_df["norm_PCPRatio"] + h_w[2] * need_df["norm_Obesity"])
 
     f_total = w_food + w_obesity
     f_w = [w / f_total if f_total > 0 else 0 for w in [w_food, w_obesity]]
-    need_df["grocery_need"] = (f_w[0] * need_df["norm_LowFoodAccess"] + 
-                               f_w[1] * need_df["norm_Obesity"])
+    need_df["grocery_need"] = (f_w[0] * need_df["norm_LowFoodAccess"] + f_w[1] * need_df["norm_Obesity"])
 
-    # Perform the merge
     final_df = need_df.merge(centroids[["ZIP", "lat", "lon"]], on="ZIP", how="inner")
-    
     if final_df.empty:
-        st.error("Merge resulted in 0 rows. Check ZIP column formats in both files.")
+        st.error("Merge resulted in 0 rows. Check ZIP formats.")
         st.stop()
-        
     return final_df
 
 # ---------------------------------------------------------
@@ -105,7 +98,6 @@ def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("🏢 Planning Parameters")
-    
     with st.expander("💰 Financial Budgeting", expanded=False):
         total_budget = st.number_input("Total Plan Budget ($M)", 1.0, 500.0, 10.0, step=5.0)
         base_cost_clinic = st.slider("Base Clinic Cost ($M)", 1.0, 20.0, 5.0, step=0.10)
@@ -143,21 +135,16 @@ with st.spinner("Calculating Optimal Placements..."):
     coverage = {zi: {zj for zj in zips if haversine(lat_map[zi], lon_map[zi], lat_map[zj], lon_map[zj]) <= radius} for zi in zips}
 
     def run_opt(need_col, prefix, budget_limit):
-        if budget_limit < 1:
-            return pd.DataFrame(columns=["ZIP", "lat", "lon", "Score"])
-            
+        if budget_limit < 1: return pd.DataFrame(columns=["ZIP", "lat", "lon", "Score"])
         need_map = df.set_index("ZIP")[need_col].to_dict()
         model = pulp.LpProblem(f"opt_{prefix}", pulp.LpMaximize)
         x = {z: pulp.LpVariable(f"{prefix}_{z}", 0, 1, cat="Binary") for z in zips}
         y = {z: pulp.LpVariable(f"covered_{z}", 0, 1, cat="Binary") for z in zips}
-        
         for j in zips:
             model += y[j] <= pulp.lpSum(x[i] for i in zips if j in coverage[i])
-            
         model += pulp.lpSum(x.values()) <= budget_limit
         model += pulp.lpSum(need_map[z] * y[z] for z in zips)
         model.solve(pulp.PULP_CBC_CMD(msg=False))
-        
         chosen = [z for z in zips if x[z].value() == 1]
         res = []
         for z in chosen:
@@ -170,104 +157,59 @@ with st.spinner("Calculating Optimal Placements..."):
     grocery_pts = run_opt("grocery_need", "grocery", max_groceries)
 
 # ---------------------------------------------------------
-# UI TABS
+# RENDER MAP 
 # ---------------------------------------------------------
-tab1, tab2 = st.tabs(["🏥 Healthcare Network", "🛒 Food Security Network"])
-
 def render_map(points_df, color_rgb, need_col):
-    # Prepare the background heatmap layer
     df["fill_color"] = df[need_col].apply(lambda x: [255, 0, 0, int(x * 160)])
+    view_state = pdk.ViewState(latitude=30.3322, longitude=-81.6557, zoom=10, pitch=40)
     
-    view_state = pdk.ViewState(
-        latitude=30.3322, 
-        longitude=-81.6557, 
-        zoom=10, 
-        pitch=40
-    )
-    
-    # Background heatmap (not pickable to keep the UI clean)
     layers = [
-        pdk.Layer(
-            "ScatterplotLayer", 
-            df, 
-            get_position="[lon, lat]", 
-            get_fill_color="fill_color", 
-            get_radius=1100,
-            pickable=False
-        )
+        pdk.Layer("ScatterplotLayer", df, get_position="[lon, lat]", get_fill_color="fill_color", get_radius=1100, pickable=False)
     ]
     
-    # Add the proposed facility layers
     if not points_df.empty:
         layers.extend([
-            # Outer service radius circle
-            pdk.Layer(
-                "ScatterplotLayer", 
-                points_df, 
-                get_position="[lon, lat]", 
-                get_fill_color=color_rgb + [40], 
-                get_radius=radius * 1609,
-                pickable=False
-            ),
-            # Inner point (The actual facility)
-            pdk.Layer(
-                "ScatterplotLayer", 
-                points_df, 
-                get_position="[lon, lat]", 
-                get_fill_color=color_rgb, 
-                get_radius=600, 
-                pickable=True  # This makes the tooltip work
-            )
+            pdk.Layer("ScatterplotLayer", points_df, get_position="[lon, lat]", get_fill_color=color_rgb + [40], get_radius=radius * 1609, pickable=False),
+            pdk.Layer("ScatterplotLayer", points_df, get_position="[lon, lat]", get_fill_color=color_rgb, get_radius=600, pickable=True)
         ])
     
-    # Updated tooltip with Latitude and Longitude
+    bg_color = f"rgb({color_rgb[0]}, {color_rgb[1]}, {color_rgb[2]})"
+
     st.pydeck_chart(pdk.Deck(
-        layers=layers, 
-        initial_view_state=view_state, 
+        layers=layers, initial_view_state=view_state,
         tooltip={
-            "html": """
-                <b>ZIP Code:</b> {ZIP}<br/>
-                <b>Impact Score:</b> {Score}<br/>
-                <b>Latitude:</b> {lat}<br/>
-                <b>Longitude:</b> {lon}
-            """,
-            "style": {
-                "backgroundColor": "steelblue",
-                "color": "white"
-            }
+            "html": "<b>ZIP:</b> {ZIP}<br/><b>Score:</b> {Score}<br/><b>Lat:</b> {lat}<br/><b>Lon:</b> {lon}",
+            "style": {"backgroundColor": bg_color, "color": "white"}
         }
     ))
 
+# ---------------------------------------------------------
+# TABS
+# ---------------------------------------------------------
+tab1, tab2 = st.tabs(["🏥 Healthcare Network", "🛒 Food Security Network"])
+
 with tab1:
     if clinic_pts.empty:
-        st.warning("⚠️ Budget insufficient for this radius. Lower the radius or increase total budget.")
+        st.warning("⚠️ Budget insufficient.")
     else:
         c1, c2 = st.columns([3, 1])
-        with c1: render_map(clinic_pts, [0, 128, 255], "clinic_need")
+        with c1: render_map(clinic_pts, [70, 130, 180], "clinic_need") # STEEL BLUE
         with c2:
             st.write("### Clinic Allocations")
-            st.metric("Facilities Built", len(clinic_pts), f"Limit: {max_clinics}")
-            st.metric("Money Spent", f"${(len(clinic_pts) * cost_per_clinic):.1f}M")
-            # --- FIX: SHOW COORDINATES IN TABLE FOR VERIFICATION ---
-            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Score"]].sort_values("Score", ascending=False), hide_index=True)
+            st.metric("Clinics", len(clinic_pts))
+            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Score"]], hide_index=True)
 
 with tab2:
     if grocery_pts.empty:
-        st.warning("⚠️ Budget insufficient for this radius. Lower the radius or increase total budget.")
+        st.warning("⚠️ Budget insufficient.")
     else:
         c1, c2 = st.columns([3, 1])
-        with c1: render_map(grocery_pts, [34, 139, 34], "grocery_need")
+        with c1: render_map(grocery_pts, [34, 139, 34], "grocery_need") # GREEN
         with c2:
             st.write("### Grocery Allocations")
-            st.metric("Facilities Built", len(grocery_pts), f"Limit: {max_groceries}")
-            st.metric("Money Spent", f"${(len(grocery_pts) * cost_per_grocery):.1f}M")
-            # --- FIX: SHOW COORDINATES IN TABLE FOR VERIFICATION ---
-            st.dataframe(grocery_pts[["ZIP", "lat", "lon", "Score"]].sort_values("Score", ascending=False), hide_index=True)
+            st.metric("Groceries", len(grocery_pts))
+            st.dataframe(grocery_pts[["ZIP", "lat", "lon", "Score"]], hide_index=True)
 
 if show_analytics:
     st.divider()
-    chart_data = df[["ZIP", "clinic_need", "grocery_need"]].set_index("ZIP")
-    st.bar_chart(chart_data)
-
-st.divider()
-st.info("The red heatmap identifies areas with the highest combined social and health risks. The blue/green hubs are the mathematically ideal locations to build facilities to reach the most people in need, given your current budget and service radius")
+    st.bar_chart(df[["ZIP", "clinic_need", "grocery_need"]].set_index("ZIP"))

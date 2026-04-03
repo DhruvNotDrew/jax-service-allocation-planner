@@ -5,8 +5,6 @@ import pulp
 import pydeck as pdk
 import math
 
-# to run through terminal: .\.venv\Scripts\streamlit run jax-service-allocation-planner.py
-
 # ---------------------------------------------------------
 # PAGE CONFIG & CLEAN UI
 # ---------------------------------------------------------
@@ -58,35 +56,49 @@ def weighted_geometric_median(points, weights, eps=1e-6, max_iter=100):
 @st.cache_data
 def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     try:
-        need_df = pd.read_csv(".datafiles/clustered_zipcodes.csv")
-        centroids = pd.read_excel(".datafiles/Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")
-    except:
-        st.error("Data files not found. Check local paths.")
+        # Check both the dot folder and root for cloud compatibility
+        try:
+            need_df = pd.read_csv(".datafiles/clustered_zipcodes.csv")
+            centroids = pd.read_excel(".datafiles/Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")
+        except:
+            need_df = pd.read_csv("clustered_zipcodes.csv")
+            centroids = pd.read_excel("Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")
+    except Exception as e:
+        st.error(f"Data files not found. Error: {e}")
         st.stop()
         
     need_df = need_df.loc[:, ~need_df.columns.duplicated()]
     need_df = need_df[need_df["ZIP Code"] != 12031]
     need_df = need_df.rename(columns={"ZIP Code": "ZIP", "Low Food Access": "LowFoodAccess", "Park Area": "ParkArea", "PCP Ratio": "PCPRatio"})
 
+    # --- FIX: FORCE ZIP CODES TO STRINGS TO ENSURE MERGE SUCCESS ---
+    need_df["ZIP"] = need_df["ZIP"].astype(str).str.strip()
+    centroids = centroids.rename(columns={"STD_ZIP5": "ZIP", "LATITUDE": "lat", "LONGITUDE": "lon"})
+    centroids["ZIP"] = centroids["ZIP"].astype(str).str.strip()
+
     def norm(s): return (s - s.min()) / (s.max() - s.min()) if s.max() != s.min() else 0
     for col in ["LowFoodAccess", "Obesity", "Uninsured", "ParkArea", "PCPRatio"]:
         need_df[f"norm_{col}"] = norm(need_df[col])
 
-    # NEW: Normalized Healthcare Weights (Uninsured + PCP + Obesity)
     h_total = w_uninsured + w_pcp + w_obesity
     h_w = [w / h_total if h_total > 0 else 0 for w in [w_uninsured, w_pcp, w_obesity]]
     need_df["clinic_need"] = (h_w[0] * need_df["norm_Uninsured"] + 
                               h_w[1] * need_df["norm_PCPRatio"] + 
                               h_w[2] * need_df["norm_Obesity"])
 
-    # NEW: Normalized Food Weights (Food Access + Obesity)
     f_total = w_food + w_obesity
     f_w = [w / f_total if f_total > 0 else 0 for w in [w_food, w_obesity]]
     need_df["grocery_need"] = (f_w[0] * need_df["norm_LowFoodAccess"] + 
                                f_w[1] * need_df["norm_Obesity"])
 
-    centroids = centroids.rename(columns={"STD_ZIP5": "ZIP", "LATITUDE": "lat", "LONGITUDE": "lon"})
-    return need_df.merge(centroids[["ZIP", "lat", "lon"]], on="ZIP", how="inner")
+    # Perform the merge
+    final_df = need_df.merge(centroids[["ZIP", "lat", "lon"]], on="ZIP", how="inner")
+    
+    if final_df.empty:
+        st.error("Merge resulted in 0 rows. Check ZIP column formats in both files.")
+        st.stop()
+        
+    return final_df
 
 # ---------------------------------------------------------
 # SIDEBAR
@@ -171,7 +183,7 @@ def render_map(points_df, color_rgb, need_col):
             pdk.Layer("ScatterplotLayer", points_df, get_position="[lon, lat]", get_fill_color=color_rgb + [40], get_radius=radius * 1609),
             pdk.Layer("ScatterplotLayer", points_df, get_position="[lon, lat]", get_fill_color=color_rgb, get_radius=600, pickable=True)
         ])
-    st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state, tooltip={"text": "Impact: {Score}"}))
+    st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state, tooltip={"text": "ZIP: {ZIP}\nImpact: {Score}"}))
 
 with tab1:
     if clinic_pts.empty:
@@ -183,7 +195,8 @@ with tab1:
             st.write("### Clinic Allocations")
             st.metric("Facilities Built", len(clinic_pts), f"Limit: {max_clinics}")
             st.metric("Money Spent", f"${(len(clinic_pts) * cost_per_clinic):.1f}M")
-            st.dataframe(clinic_pts[["ZIP", "Score"]].sort_values("Score", ascending=False), hide_index=True)
+            # --- FIX: SHOW COORDINATES IN TABLE FOR VERIFICATION ---
+            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Score"]].sort_values("Score", ascending=False), hide_index=True)
 
 with tab2:
     if grocery_pts.empty:
@@ -195,7 +208,8 @@ with tab2:
             st.write("### Grocery Allocations")
             st.metric("Facilities Built", len(grocery_pts), f"Limit: {max_groceries}")
             st.metric("Money Spent", f"${(len(grocery_pts) * cost_per_grocery):.1f}M")
-            st.dataframe(grocery_pts[["ZIP", "Score"]].sort_values("Score", ascending=False), hide_index=True)
+            # --- FIX: SHOW COORDINATES IN TABLE FOR VERIFICATION ---
+            st.dataframe(grocery_pts[["ZIP", "lat", "lon", "Score"]].sort_values("Score", ascending=False), hide_index=True)
 
 if show_analytics:
     st.divider()

@@ -58,8 +58,8 @@ def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     try:
         # Check both the dot folder and root for cloud compatibility
         try:
-            need_df = pd.read_csv(".datafiles/clustered_zipcodes.csv")
-            centroids = pd.read_excel(".datafiles/Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")
+            need_df = pd.read_csv("datafiles/clustered_zipcodes.csv")
+            centroids = pd.read_excel("datafiles/Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")
         except:
             need_df = pd.read_csv("clustered_zipcodes.csv")
             centroids = pd.read_excel("Usable_ZIP_Code_Population_Weighted_Centroids_Jacksonville.xlsx")

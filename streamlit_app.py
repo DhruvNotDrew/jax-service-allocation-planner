@@ -70,7 +70,6 @@ def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     need_df = need_df[need_df["ZIP Code"] != 12031]
     need_df = need_df.rename(columns={"ZIP Code": "ZIP", "Low Food Access": "LowFoodAccess", "Park Area": "ParkArea", "PCP Ratio": "PCPRatio"})
 
-    # ZIP FORMAT FIX
     need_df["ZIP"] = need_df["ZIP"].astype(str).str.strip()
     centroids = centroids.rename(columns={"STD_ZIP5": "ZIP", "LATITUDE": "lat", "LONGITUDE": "lon"})
     centroids["ZIP"] = centroids["ZIP"].astype(str).str.strip()
@@ -79,7 +78,6 @@ def load_and_prep_data(w_uninsured, w_pcp, w_obesity, w_food):
     for col in ["LowFoodAccess", "Obesity", "Uninsured", "ParkArea", "PCPRatio"]:
         need_df[f"norm_{col}"] = norm(need_df[col])
 
-    # Calculate Needs
     h_total = w_uninsured + w_pcp + w_obesity
     h_w = [w / h_total if h_total > 0 else 0 for w in [w_uninsured, w_pcp, w_obesity]]
     need_df["clinic_need"] = (h_w[0] * need_df["norm_Uninsured"] + h_w[1] * need_df["norm_PCPRatio"] + h_w[2] * need_df["norm_Obesity"])
@@ -131,7 +129,7 @@ lon_map = df.set_index("ZIP")["lon"].to_dict()
 coverage = {zi: {zj for zj in zips if haversine(lat_map[zi], lon_map[zi], lat_map[zj], lon_map[zj]) <= radius} for zi in zips}
 
 def run_opt(need_col, prefix, limit):
-    if limit < 1: return pd.DataFrame(columns=["ZIP", "lat", "lon", "Score"])
+    if limit < 1: return pd.DataFrame(columns=["ZIP", "lat", "lon", "Impact Score"])
     need_map = df.set_index("ZIP")[need_col].to_dict()
     model = pulp.LpProblem(f"opt_{prefix}", pulp.LpMaximize)
     x = {z: pulp.LpVariable(f"{prefix}_{z}", 0, 1, cat="Binary") for z in zips}
@@ -146,7 +144,8 @@ def run_opt(need_col, prefix, limit):
     for z in chosen:
         sub = df[df["ZIP"].isin(list(coverage[z]))]
         opt_lat, opt_lon = weighted_geometric_median(sub[["lat", "lon"]].values, sub[need_col].values)
-        res.append({"ZIP": z, "lat": opt_lat, "lon": opt_lon, "Score": round(sub[need_col].sum(), 2)})
+        # Rename Score to Impact Score here
+        res.append({"ZIP": z, "lat": opt_lat, "lon": opt_lon, "Impact Score": round(sub[need_col].sum(), 2)})
     return pd.DataFrame(res)
 
 clinic_pts = run_opt("clinic_need", "clinic", max_clinics)
@@ -177,7 +176,7 @@ def render_map(points_df, color_rgb, need_col):
     st.pydeck_chart(pdk.Deck(
         layers=layers, initial_view_state=view_state,
         tooltip={
-            "html": "<b>ZIP Code:</b> {ZIP}<br/><b>Impact Score:</b> {Score}<br/><b>Latitude:</b> {lat}<br/><b>Longitude:</b> {lon}",
+            "html": "<b>ZIP Code:</b> {ZIP}<br/><b>Impact Score:</b> {Impact Score}<br/><b>Latitude:</b> {lat}<br/><b>Longitude:</b> {lon}",
             "style": {"backgroundColor": bg_color, "color": "white"}
         }
     ))
@@ -197,7 +196,7 @@ with tab1:
             st.write("### Clinic Allocations")
             st.metric("Facilities Built", len(clinic_pts), f"Limit: {max_clinics}")
             st.metric("Money Spent", f"${(len(clinic_pts) * cost_per_clinic):.1f}M")
-            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Score"]].sort_values("Score", ascending=False), hide_index=True)
+            st.dataframe(clinic_pts[["ZIP", "lat", "lon", "Impact Score"]].sort_values("Impact Score", ascending=False), hide_index=True)
 
 with tab2:
     if grocery_pts.empty:
@@ -209,7 +208,7 @@ with tab2:
             st.write("### Grocery Allocations")
             st.metric("Facilities Built", len(grocery_pts), f"Limit: {max_groceries}")
             st.metric("Money Spent", f"${(len(grocery_pts) * cost_per_grocery):.1f}M")
-            st.dataframe(grocery_pts[["ZIP", "lat", "lon", "Score"]].sort_values("Score", ascending=False), hide_index=True)
+            st.dataframe(grocery_pts[["ZIP", "lat", "lon", "Impact Score"]].sort_values("Impact Score", ascending=False), hide_index=True)
 
 if show_analytics:
     st.divider()
@@ -217,4 +216,15 @@ if show_analytics:
     st.bar_chart(chart_data)
 
 st.divider()
-st.info("The red heatmap identifies areas with the highest combined social and health risks. The blue/green hubs are the mathematically ideal locations to build facilities to reach the most people in need, given your current budget and service radius.")
+# Expanded info block with Impact Score definition
+st.info(f"""
+**Strategic Summary:**
+* The red heatmap identifies areas with the highest combined social and health risks. 
+* The blue/green hubs are the mathematically ideal locations to build facilities to reach the most people in need, given your current budget and service radius.
+
+**What is the Impact Score?**
+The **Impact Score** represents the total 'Need Units' captured within a facility's service radius. It is calculated by summing the normalized risk factors of all covered ZIP codes, weighted by your sidebar preferences:
+* **Healthcare Impact:** Sum of (Uninsured % × {w_un} + PCP Ratio × {w_pcp} + Obesity × {w_ob}).
+* **Food Impact:** Sum of (Low Food Access × {w_fd} + Obesity × {w_ob}).
+A higher score indicates the facility is positioned to serve a population with significantly higher service gaps.
+""") 

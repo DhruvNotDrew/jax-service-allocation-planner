@@ -5,7 +5,7 @@ import pulp
 import pydeck as pdk
 import math
 
-# to run through terminal: .\.venv\Scripts\streamlit run DataThon-main/Datathon.py
+# to run through terminal: .\.venv\Scripts\streamlit run jax-service-allocation-planner.py
 
 # ---------------------------------------------------------
 # PAGE CONFIG & CLEAN UI
